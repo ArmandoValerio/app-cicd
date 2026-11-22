@@ -89,6 +89,16 @@ El flujo incluido funciona de inmediato usando el `GITHUB_TOKEN` integrado de Gi
 
 ---
 
+## Política de Protección de Rama (`main`)
+
+La rama principal `main` está protegida mediante el ruleset **`protect-main`** en GitHub:
+
+- **Integración exclusiva vía Pull Request:** los `git push` directos a `main`, los `force push` y el borrado de la rama están bloqueados sin excepciones.
+- **Checks obligatorios antes del merge:** `Análisis Estático y Seguridad` y `Pruebas Unitarias y Cobertura` deben aprobar en el PR.
+- **Flujo recomendado:** crear una rama (`git checkout -b feat/mi-cambio`), abrir un Pull Request hacia `main`, verificar ambos checks en verde y realizar el merge para disparar el despliegue continuo automático.
+
+---
+
 ## Comandos de Ejecución Local y Despliegue
 
 ### Desarrollo, Linting, SAST y Pruebas Unitarias
