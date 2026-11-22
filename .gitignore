@@ -1,0 +1,32 @@
+# Entornos virtuales y compilación Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+
+# Pruebas, cobertura y linters
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.ruff_cache/
+
+# Terraform y estado local
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl
+*.tfvars
+
+# Secretos y configuración local
+.env
+.env.*
+
+# Sistema operativo e IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

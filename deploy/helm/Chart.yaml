@@ -1,0 +1,6 @@
+apiVersion: v2
+name: app
+description: Chart Helm para los microservicios de la Plataforma de Aprendizaje de Lenguas Maternas e Indígenas (app-cicd).
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

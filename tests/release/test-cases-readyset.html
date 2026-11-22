@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>app-cicd | Plan de QA &gt; Conjunto de Pruebas &gt; Formato de Caso de Pruebas (ReadySET)</title>
+  <style>
+    :root {
+      --bg: #f6f8fa;
+      --surface: #ffffff;
+      --border: #d0d7de;
+      --text: #1f2328;
+      --muted: #59636e;
+      --primary: #0f4c81;
+      --primary-soft: #eaf2f8;
+      --accent: #1b7f5c;
+      --accent-soft: #e8f6f0;
+      --warn: #9a6700;
+      --warn-soft: #fff8c5;
+      --code-bg: #f3f4f6;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 24px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.55;
+    }
+    .container {
+      max-width: 1120px;
+      margin: 0 auto;
+    }
+    .breadcrumb {
+      background: var(--primary);
+      color: #ffffff;
+      padding: 10px 16px;
+      border-radius: 8px 8px 0 0;
+      font-size: 0.9rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+    .header-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-top: none;
+      border-radius: 0 0 8px 8px;
+      padding: 20px 24px;
+      margin-bottom: 24px;
+    }
+    h1 {
+      margin: 0 0 8px 0;
+      font-size: 1.6rem;
+      color: var(--primary);
+    }
+    h2 {
+      margin: 24px 0 12px 0;
+      font-size: 1.25rem;
+      color: var(--primary);
+      border-bottom: 2px solid var(--primary-soft);
+      padding-bottom: 6px;
+    }
+    h3 {
+      margin: 18px 0 8px 0;
+      font-size: 1.02rem;
+      color: var(--text);
+    }
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }
+    .meta-item {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+      font-size: 0.9rem;
+    }
+    .meta-item strong {
+      display: block;
+      color: var(--muted);
+      font-size: 0.78rem;
+      text-transform: uppercase;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px 24px;
+      margin-bottom: 24px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 10px 0 16px 0;
+      font-size: 0.92rem;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 8px 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background: var(--primary-soft);
+      color: var(--primary);
+      font-weight: 600;
+    }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 0.78rem;
+      font-weight: 600;
+    }
+    .badge-ok { background: var(--accent-soft); color: var(--accent); }
+    .badge-warn { background: var(--warn-soft); color: var(--warn); }
+    code {
+      background: var(--code-bg);
+      padding: 2px 5px;
+      border-radius: 4px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.88em;
+    }
+    .kw {
+      display: inline-block;
+      min-width: 86px;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: var(--primary-soft);
+      color: var(--primary);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.82rem;
+      font-weight: 700;
+      text-transform: lowercase;
+    }
+    ol.steps {
+      padding-left: 22px;
+      margin: 8px 0 16px 0;
+    }
+    ol.steps li {
+      margin-bottom: 8px;
+    }
+    .footer {
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.85rem;
+      margin-top: 16px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="breadcrumb">Plan de QA &gt; Conjunto de Pruebas &gt; Formato de Caso de Pruebas</div>
+    <header class="header-card">
+      <h1>Especificación de Casos de Prueba en Entorno de Liberación — <code>app-cicd</code></h1>
+      <p>
+        Documento estructurado bajo la plantilla estándar <strong>ReadySET</strong> para validar la
+        <strong>Plataforma de Aprendizaje de Lenguas Maternas e Indígenas</strong> (Náhuatl, Maya Yucateco,
+        Zapoteco, Mixteco y Tsotsil) en el clúster <code>app-cluster</code> previo a su promoción a producción.
+      </p>
+      <div class="meta-grid">
+        <div class="meta-item"><strong>Proyecto / Servicio</strong><code>app-cicd</code> (<code>app</code>)</div>
+        <div class="meta-item"><strong>Entorno Bajo Prueba</strong><code>https://release.app.org</code> (namespace <code>release</code>)</div>
+        <div class="meta-item"><strong>SLA / SLO Clave</strong>99.95% disp. | &le; 250 ms P95 lecciones | &le; 850 ms P95 audio</div>
+        <div class="meta-item"><strong>Estándar de Codificación</strong>UTF-8 estricto (saltillo <code>ꞌ</code>, macrones <code>ā, ē, ī, ō</code>)</div>
+      </div>
+    </header>
+
+    <section class="card">
+      <h2>Resumen del Conjunto de Pruebas de Liberación</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>ID del Caso</th>
+            <th>Título</th>
+            <th>Microservicio Principal</th>
+            <th>Prioridad</th>
+            <th>Criterio SLA</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>TC-REL-001</code></td>
+            <td>Lección de vocabulario en Náhuatl (Unidad 1 y UTF-8)</td>
+            <td><code>lessons</code> / <code>gateway</code></td>
+            <td><span class="badge badge-ok">Crítica (P0)</span></td>
+            <td>P95 &le; 250 ms</td>
+          </tr>
+          <tr>
+            <td><code>TC-REL-002</code></td>
+            <td>Evaluación fonética con micrófono y muestra nativa</td>
+            <td><code>speech</code> / <code>gateway</code></td>
+            <td><span class="badge badge-ok">Crítica (P0)</span></td>
+            <td>P95 &le; 850 ms</td>
+          </tr>
+          <tr>
+            <td><code>TC-REL-003</code></td>
+            <td>Diccionario comunitario dialectal multilingüe</td>
+            <td><code>lexicon</code> / <code>gateway</code></td>
+            <td><span class="badge badge-warn">Alta (P1)</span></td>
+            <td>P95 &le; 250 ms</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- CASO 1 -->
+    <article class="card" id="TC-REL-001">
+      <h2>Caso de Prueba: <code>TC-REL-001</code> — Lección de vocabulario en Náhuatl</h2>
+      <table>
+        <tbody>
+          <tr><th style="width:220px;">Identificador</th><td><code>TC-REL-001</code></td></tr>
+          <tr><th>Propósito</th><td>Validar la carga íntegra de la Unidad 1 de Náhuatl, la preservación sin pérdida de caracteres glotales (saltillo <code>ꞌ</code>) y macrones (<code>ā, ē, ī, ō</code>) en UTF-8, el flujo gamificado de XP y el cumplimiento de latencia &le; 250 ms.</td></tr>
+          <tr><th>Precondiciones</th><td>El despliegue <code>app-release</code> se encuentra saludable en <code>release.app.org</code> (<code>/healthz</code> y <code>/ready</code> en HTTP 200), Redis operativo en modo standalone y la base de datos de lecciones poblada con la Unidad 1 de Náhuatl.</td></tr>
+          <tr><th>Datos de Prueba</th><td>Usuario estudiante: <code>estudiante.nahuatl@app.org</code> | Endpoint API: <code>GET /api/v1/lessons/nahuatl/unidad-1</code> | Respuesta esperada al ejercicio <code>ex-001</code>: <code>Buenos días</code>.</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Clases de Equivalencia</h3>
+      <table>
+        <thead>
+          <tr><th>Parámetro / Campo</th><th>Clase Válida (Esperado: HTTP 200 / Aceptado)</th><th>Clase Inválida (Esperado: Error controlado)</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Identificador de lengua y unidad</td>
+            <td><code>nahuatl/unidad-1</code> (lengua y unidad registradas)</td>
+            <td><code>nahuatl/unidad-999</code> o lengua inexistente (HTTP 404)</td>
+          </tr>
+          <tr>
+            <td>Codificación de caracteres en texto</td>
+            <td>UTF-8 válido con diacríticos y glotales: <code>Cualli tōnalli</code>, <code>Niltze, ¿quēn timoyetzticaꞌ?</code></td>
+            <td>Secuencias mal codificadas (ISO-8859-1 / mojibake <code>Ã³</code> o escapes literales <code>\uA78C</code>)</td>
+          </tr>
+          <tr>
+            <td>Respuesta del ejercicio <code>ex-001</code></td>
+            <td>Cadena equivalente normalizada: <code>Buenos días</code> (+15 XP)</td>
+            <td>Cadena vacía o respuesta incorrecta (0 XP, retroalimentación de corrección)</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Pasos del Caso de Prueba (Formato ReadySET)</h3>
+      <ol class="steps">
+        <li><span class="kw">login</span> Autenticarse en la plataforma <code>app</code> con la cuenta <code>estudiante.nahuatl@app.org</code> mediante token OIDC de sesión de pruebas.</li>
+        <li><span class="kw">visitar</span> Navegar a <code>https://release.app.org/api/v1/lessons/nahuatl/unidad-1</code> (o vista de lección Náhuatl Unidad 1).</li>
+        <li><span class="kw">verificar</span> Comprobar que el código de estado HTTP sea <code>200</code>, la cabecera <code>Content-Type</code> declare <code>application/json; charset=utf-8</code> y el tiempo de respuesta sea &le; 250 ms.</li>
+        <li><span class="kw">ver:</span> Visualizar en el cuerpo de respuesta los términos <code>Cualli tōnalli</code>, <code>Tlazōhcamati</code>, <code>Niltze, ¿quēn timoyetzticaꞌ?</code> y <code>Mā cualli tōnalli</code> sin caracteres corruptos.</li>
+        <li><span class="kw">introduzca</span> Ingresar la traducción <code>Buenos días</code> en el ejercicio de vocabulario <code>ex-001</code>.</li>
+        <li><span class="kw">haga click</span> Presionar el botón <strong>Comprobar respuesta</strong> para enviar el intento de micro-lección.</li>
+        <li><span class="kw">verificar</span> Confirmar que la evaluación marca la respuesta como correcta, asigna <code>+15 XP</code> al progreso del usuario y habilita el siguiente ejercicio de la unidad.</li>
+      </ol>
+
+      <table>
+        <tbody>
+          <tr><th style="width:220px;">Resultado Esperado</th><td>La lección se renderiza íntegra en UTF-8 con glotales y macrones preservados, el progreso suma 15 XP y la latencia se mantiene por debajo de 250 ms.</td></tr>
+          <tr><th>Postcondiciones</th><td>El registro de progreso de la Unidad 1 queda persistido en caché Redis y base de datos del entorno <code>release</code> sin errores HTTP 5xx.</td></tr>
+          <tr><th>Registro de Ejecución</th><td><em>Pendiente de ejecución en job <code>release-verification</code> (Pipeline CI/CD).</em></td></tr>
+        </tbody>
+      </table>
+    </article>
+
+    <!-- CASO 2 -->
+    <article class="card" id="TC-REL-002">
+      <h2>Caso de Prueba: <code>TC-REL-002</code> — Evaluación fonética con micrófono</h2>
+      <table>
+        <tbody>
+          <tr><th style="width:220px;">Identificador</th><td><code>TC-REL-002</code></td></tr>
+          <tr><th>Propósito</th><td>Validar la descarga del audio nativo de referencia (<code>audio/wav</code>) y el envío de grabación de micrófono del aprendiz para la puntuación fonética de consonantes glotales en Náhuatl dentro del SLO (&le; 850 ms P95).</td></tr>
+          <tr><th>Precondiciones</th><td>Permiso de micrófono disponible (o flujo de audio sintético WAV de pruebas en entorno headless), muestra nativa <code>cualli-tonalli.wav</code> publicada en <code>/api/v1/speech/sample/cualli-tonalli.wav</code> y servicio <code>speech</code> operativo.</td></tr>
+          <tr><th>Datos de Prueba</th><td>Audio de referencia: <code>/api/v1/speech/sample/cualli-tonalli.wav</code> | Grabación válida: WAV PCM 16 kHz mono (1.2 s) | Archivo inválido: <code>..evil.wav</code> o buffer silencioso de 0 ms.</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Clases de Equivalencia</h3>
+      <table>
+        <thead>
+          <tr><th>Parámetro / Entrada</th><th>Clase Válida (Esperado: Aceptado)</th><th>Clase Inválida (Esperado: Rechazado)</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Nombre de archivo de muestra</td>
+            <td>Identificador alfanumérico permitido: <code>cualli-tonalli.wav</code>, <code>niltze.wav</code> (HTTP 200, <code>audio/wav</code>)</td>
+            <td>Path traversal o caracteres prohibidos: <code>..evil.wav</code>, <code>bad;audio.wav</code> (HTTP 400); no existente (HTTP 404)</td>
+          </tr>
+          <tr>
+            <td>Captura de micrófono (audio)</td>
+            <td>Audio WAV PCM 16 kHz / 16-bit entre 0.5 s y 10 s con voz audible (similitud &ge; 0.80)</td>
+            <td>Audio vacío (0 bytes), formato no soportado (<code>.exe</code>/texto) o duración &gt; 30 s</td>
+          </tr>
+          <tr>
+            <td>Latencia de inferencia fonética</td>
+            <td>Respuesta completa en &le; 850 ms (cumple SLO de audio)</td>
+            <td>Timeout o respuesta &gt; 850 ms en percentil 95</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Pasos del Caso de Prueba (Formato ReadySET)</h3>
+      <ol class="steps">
+        <li><span class="kw">login</span> Iniciar sesión con la cuenta <code>estudiante.nahuatl@app.org</code> en el entorno <code>release</code>.</li>
+        <li><span class="kw">visitar</span> Acceder al ejercicio fonético <code>ex-003</code> en <code>https://release.app.org/api/v1/lessons/nahuatl/unidad-1</code> y solicitar la muestra <code>/api/v1/speech/sample/cualli-tonalli.wav</code>.</li>
+        <li><span class="kw">verificar</span> Confirmar que la muestra nativa responde HTTP <code>200</code>, cabecera <code>Content-Type: audio/wav</code>, cabecera <code>X-Audio-Language: nahuatl</code> y firma binaria <code>RIFF/WAVE</code> válida.</li>
+        <li><span class="kw">haga click</span> Pulsar el botón <strong>Grabar pronunciación</strong> para activar la captura del micrófono.</li>
+        <li><span class="kw">introduzca</span> Suministrar la locución de prueba <code>Niltze, ¿quēn timoyetzticaꞌ?</code> (WAV PCM 16 kHz) y detener la captura.</li>
+        <li><span class="kw">ver:</span> Observar el indicador de procesamiento y la tarjeta de retroalimentación fonética devuelta por el microservicio <code>speech</code>.</li>
+        <li><span class="kw">verificar</span> Comprobar que la puntuación fonética es &ge; <code>0.80</code>, se otorgan <code>+25 XP</code>, la latencia total es &le; 850 ms y una petición maliciosa a <code>/api/v1/speech/sample/..evil.wav</code> devuelve HTTP <code>400</code>.</li>
+      </ol>
+
+      <table>
+        <tbody>
+          <tr><th style="width:220px;">Resultado Esperado</th><td>La pronunciación nativa y la evaluación por micrófono completan con precisión fonética validada, protección ante rutas inválidas (HTTP 400) y latencia dentro de 850 ms.</td></tr>
+          <tr><th>Postcondiciones</th><td>No quedan archivos temporales persistidos en disco (<code>readOnlyRootFilesystem: true</code>); solo se registra la puntuación anonimizada en la lección.</td></tr>
+          <tr><th>Registro de Ejecución</th><td><em>Pendiente de ejecución en job <code>release-verification</code> (Pipeline CI/CD).</em></td></tr>
+        </tbody>
+      </table>
+    </article>
+
+    <!-- CASO 3 -->
+    <article class="card" id="TC-REL-003">
+      <h2>Caso de Prueba: <code>TC-REL-003</code> — Diccionario comunitario dialectal</h2>
+      <table>
+        <tbody>
+          <tr><th style="width:220px;">Identificador</th><td><code>TC-REL-003</code></td></tr>
+          <tr><th>Propósito</th><td>Validar la búsqueda diacrítica y el flujo de aportación de variantes dialectales regionales en el diccionario comunitario (Náhuatl, Maya Yucateco, Zapoteco, Mixteco y Tsotsil) mediante el microservicio <code>lexicon</code>.</td></tr>
+          <tr><th>Precondiciones</th><td>Microservicio <code>lexicon</code> conectado a PostgreSQL y Redis en el namespace <code>release</code>; catálogo base cargado con las 5 lenguas indígenas soportadas.</td></tr>
+          <tr><th>Datos de Prueba</th><td>Usuario hablante nativo: <code>colaborador.zapoteco@app.org</code> | Término de búsqueda: <code>tōnalli</code> | Nueva variante: Lengua <code>Zapoteco</code>, término <code>Padiuxhi</code>, significado <code>Saludos / Buenos días</code>, región <code>Valles Centrales</code>.</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Clases de Equivalencia</h3>
+      <table>
+        <thead>
+          <tr><th>Campo / Operación</th><th>Clase Válida (Esperado: Aceptado)</th><th>Clase Inválida (Esperado: Error de validación)</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Selección de lengua madre</td>
+            <td>Cualquiera de las 5 soportadas: <code>Náhuatl</code>, <code>Maya Yucateco</code>, <code>Zapoteco</code>, <code>Mixteco</code>, <code>Tsotsil</code></td>
+            <td>Código de lengua no registrado o cadena nula (HTTP 422)</td>
+          </tr>
+          <tr>
+            <td>Consulta en diccionario (UTF-8)</td>
+            <td>Término con macrones/glotales/tonos (<code>tōnalli</code>, <code>maꞌalob kꞌiin</code>, <code>ꞌ</code>)</td>
+            <td>Cargas de inyección SQL/XSS (<code>&lt;script&gt;</code>) o cadenas mayores a 200 caracteres</td>
+          </tr>
+          <tr>
+            <td>Aportación dialectal comunitaria</td>
+            <td>Término + variante regional + traducción no vacíos en UTF-8 válido</td>
+            <td>Campos obligatorios vacíos o duplicado exacto en la misma variante</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Pasos del Caso de Prueba (Formato ReadySET)</h3>
+      <ol class="steps">
+        <li><span class="kw">login</span> Autenticarse como hablante colaborador <code>colaborador.zapoteco@app.org</code> en el entorno <code>release</code>.</li>
+        <li><span class="kw">visitar</span> Abrir la sección del Diccionario Comunitario Dialectal en <code>https://release.app.org</code>.</li>
+        <li><span class="kw">introduzca</span> Escribir el término con macrón <code>tōnalli</code> en la barra de búsqueda del diccionario.</li>
+        <li><span class="kw">haga click</span> Pulsar <strong>Buscar</strong> y seleccionar el filtro de lengua correspondiente.</li>
+        <li><span class="kw">ver:</span> Verificar que se muestran las entradas en Náhuatl con su grafía original UTF-8 y sus notas dialectales.</li>
+        <li><span class="kw">haga click</span> Pulsar <strong>Proponer variante dialectal</strong> para registrar un término comunitario en <code>Zapoteco</code>.</li>
+        <li><span class="kw">introduzca</span> Capturar término <code>Padiuxhi</code>, traducción <code>Saludos / Buenos días</code> y región <code>Valles Centrales</code>, luego enviar el formulario.</li>
+        <li><span class="kw">verificar</span> Confirmar que la propuesta queda almacenada en estado <code>pendiente_revision_comunitaria</code> con codificación UTF-8 íntegra y sin exposición de scripts HTML sin escapar.</li>
+      </ol>
+
+      <table>
+        <tbody>
+          <tr><th style="width:220px;">Resultado Esperado</th><td>Las búsquedas con diacríticos y glotales devuelven resultados exactos y las propuestas dialectales quedan en cola de revisión comunitaria dentro del SLO de 250 ms.</td></tr>
+          <tr><th>Postcondiciones</th><td>La entrada de prueba queda aislada en el namespace <code>release</code> sin afectar datos de producción (<code>prod</code>).</td></tr>
+          <tr><th>Registro de Ejecución</th><td><em>Pendiente de ejecución en job <code>release-verification</code> (Pipeline CI/CD).</em></td></tr>
+        </tbody>
+      </table>
+    </article>
+
+    <footer class="footer">
+      Plantilla ReadySET — Repositorio <code>app-cicd</code> | Plataforma de Aprendizaje de Lenguas Maternas e Indígenas
+    </footer>
+  </div>
+</body>
+</html>

@@ -1,0 +1,231 @@
+name: app-cicd Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  id-token: write
+  contents: read
+  packages: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  REGISTRY: ghcr.io
+  PYTHON_VERSION: "3.12"
+  EKS_CLUSTER_NAME: app-cluster
+
+jobs:
+  static-analysis:
+    name: Análisis Estático y Seguridad
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configurar Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Instalar dependencias de desarrollo
+        run: pip install -r requirements-dev.txt
+
+      - name: Linter con Ruff
+        run: ruff check .
+
+      - name: Análisis de calidad con SonarQube
+        uses: SonarSource/sonarqube-scan-action@v4
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+
+      - name: Escaneo de vulnerabilidades con Trivy
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: "fs"
+          scan-ref: "."
+          trivy-config: ".trivy.yaml"
+          format: "table"
+          severity: "HIGH,CRITICAL"
+          exit-code: "1"
+          ignore-unfixed: true
+
+  unit-tests:
+    name: Pruebas Unitarias y Cobertura
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Instalar dependencias de pruebas
+        run: pip install -r requirements-test.txt
+
+      - name: Ejecutar Pytest con umbral de cobertura >= 85%
+        env:
+          PYTHONPATH: .
+        run: pytest --cov=src --cov-fail-under=85 --cov-report=term-missing --cov-report=xml tests/unit/
+
+      - name: Publicar reporte de cobertura
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml
+
+  build-and-sign:
+    name: Construcción y Firma de Imagen OCI
+    runs-on: ubuntu-latest
+    needs: [static-analysis, unit-tests]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    outputs:
+      image_tag: ${{ steps.meta.outputs.image_tag }}
+      image_repo: ${{ steps.meta.outputs.image_repo }}
+      image_digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+
+      - name: Normalizar repositorio de imagen en minúsculas
+        id: meta
+        run: |
+          IMAGE_REPO="${REGISTRY}/$(echo "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')"
+          echo "image_repo=${IMAGE_REPO}" >> "${GITHUB_OUTPUT}"
+          echo "image_tag=${GITHUB_SHA}" >> "${GITHUB_OUTPUT}"
+
+      - name: Configurar Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Iniciar sesión en GitHub Container Registry (GHCR)
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Construir y publicar imagen en GHCR
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.image_repo }}:${{ steps.meta.outputs.image_tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Instalar Cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Firmar imagen con Cosign (keyless OIDC)
+        env:
+          IMAGE_REPO: ${{ steps.meta.outputs.image_repo }}
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: cosign sign --yes "${IMAGE_REPO}@${IMAGE_DIGEST}"
+
+  deploy-release:
+    name: Despliegue en Entorno de Liberación
+    runs-on: ubuntu-latest
+    needs: [build-and-sign]
+    environment:
+      name: release
+      url: https://release.app.org
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+
+      - name: Autenticación OIDC con AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN_RELEASE }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+      - name: Instalar Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+          terraform_wrapper: false
+
+      - name: Instalar Helm
+        uses: azure/setup-helm@v4
+
+      - name: Instalar kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Actualizar kubeconfig para EKS (${{ env.EKS_CLUSTER_NAME }})
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+        run: aws eks update-kubeconfig --name "${EKS_CLUSTER_NAME}" --region "${AWS_REGION}"
+
+      - name: Provisionar y desplegar entorno release
+        env:
+          IMAGE_REPOSITORY: ${{ needs.build-and-sign.outputs.image_repo }}
+          DATABASE_URL: ${{ secrets.RELEASE_DATABASE_URL }}
+          REDIS_URL: ${{ secrets.RELEASE_REDIS_URL || 'redis://redis-master.release.svc.cluster.local:6379/0' }}
+          AUDIO_CDN_URL: ${{ secrets.RELEASE_AUDIO_CDN_URL || 'https://release.app.org/api/v1/speech/sample' }}
+        run: ./infra/release-env/provision_release.sh "${{ needs.build-and-sign.outputs.image_tag }}"
+
+  release-verification:
+    name: Verificación de Calidad y Carga en Liberación
+    runs-on: ubuntu-latest
+    needs: [deploy-release]
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+
+      - name: Instalar k6
+        uses: grafana/setup-k6-action@v1
+
+      - name: Ejecutar Smoke, Contrato UTF-8 y Pruebas de Carga
+        env:
+          BASE_URL: https://release.app.org
+        run: ./tests/release/run_release_tests.sh
+
+  deploy-production:
+    name: Despliegue en Producción (con Puerta de Aprobación)
+    runs-on: ubuntu-latest
+    needs: [build-and-sign, release-verification]
+    environment:
+      name: production
+      url: https://api.app.org
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+
+      - name: Autenticación OIDC con AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN_PROD }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+      - name: Instalar Helm
+        uses: azure/setup-helm@v4
+
+      - name: Instalar kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Actualizar kubeconfig para EKS (${{ env.EKS_CLUSTER_NAME }})
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+        run: aws eks update-kubeconfig --name "${EKS_CLUSTER_NAME}" --region "${AWS_REGION}"
+
+      - name: Desplegar a producción con verificación SLO y rollback automático
+        env:
+          IMAGE_REPOSITORY: ${{ needs.build-and-sign.outputs.image_repo }}
+          PROMETHEUS_URL: ${{ secrets.PROMETHEUS_URL }}
+        run: ./deploy/deploy_production.sh "${{ needs.build-and-sign.outputs.image_tag }}"
