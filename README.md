@@ -41,25 +41,27 @@ La plataforma `app` opera sobre un clúster Kubernetes (`app-cluster`) organizad
 
 ## Flujo del Pipeline CI/CD (`.github/workflows/ci-cd-pipeline.yml`)
 
-El pipeline se dispara en `push` y `pull_request` sobre la rama `main`, utiliza federación **OIDC** (`id-token: write`) sin credenciales de larga duración y control de `concurrency` por rama:
+El pipeline está diseñado con tecnologías **100% autocontenidas** y código abierto para ejecutarse por completo en GitHub Actions sin depender de servidores SaaS externos ni cuentas cloud pagadas. Se dispara en `push` y `pull_request` sobre la rama `main`, utiliza **OIDC** (`id-token: write`) y control de `concurrency` por rama:
 
 1. **`static-analysis`**:
-   - Linter de código Python con `ruff check .`.
-   - Análisis de calidad y deuda técnica con **SonarQube** (`SonarSource/sonarqube-scan-action`, configuración en `sonar-project.properties`).
-   - Escaneo de vulnerabilidades, secretos y configuraciones inseguras con **Trivy** (`HIGH,CRITICAL`, `exit-code: '1'`, políticas en `.trivy.yaml`).
+   - Linter de código Python con **Ruff** (`ruff check .`).
+   - Análisis estático de seguridad (SAST) en Python con **Bandit** (`bandit -r src/ -ll`).
+   - Escaneo de vulnerabilidades, secretos y misconfiguraciones IaC/Helm con **Trivy** (`aquasecurity/trivy-action` `v0.36.0`, `HIGH,CRITICAL`, `exit-code: '1'`, políticas en `.trivy.yaml`).
 2. **`unit-tests`**:
    - Ejecución de `pytest --cov=src --cov-fail-under=85 tests/unit/` verificando contratos, sondas y codificación UTF-8.
 3. **`build-and-sign`** *(solo en `push` a `main`)*:
    - Construcción multi-stage no-root con **Docker Buildx** (`Dockerfile`).
    - Publicación en `ghcr.io/<org>/app-cicd:<GITHUB_SHA>`.
-   - Firma criptográfica **keyless OIDC** por digest usando **Sigstore Cosign** (`cosign sign --yes`).
+   - Firma criptográfica **keyless OIDC** por digest usando **Sigstore Cosign** `v4.1.3` (`cosign sign --yes`).
 4. **`deploy-release`** *(entorno `release`)*:
-   - Autenticación OIDC hacia AWS (`aws-actions/configure-aws-credentials`) y actualización de kubeconfig para `app-cluster`.
-   - Ejecución de `./infra/release-env/provision_release.sh`: aplica Terraform (`namespace release`, `NetworkPolicy` de aislamiento y Redis Bitnami standalone), crea/actualiza `app-release-secrets` y despliega `app-release` vía Helm (`--atomic --wait --timeout 5m0s`).
+   - Levanta un clúster Kubernetes real efímero (`app-cluster`) con **kind** (`helm/kind-action@v1.9.0`) y carga la imagen de GHCR.
+   - Ejecuta `./infra/release-env/provision_release.sh`: aplica Terraform (`namespace release`, `NetworkPolicy` de aislamiento y `redis:7-alpine` endurecido como `redis-master`), crea/actualiza `app-release-secrets` y despliega `app-release` vía Helm (`--atomic --wait --timeout 5m0s`).
 5. **`release-verification`**:
-   - Ejecución de `./tests/release/run_release_tests.sh`: Smoke Tests con reintentos sobre `https://release.app.org/healthz`, validación de contrato JSON y caracteres UTF-8 (`ꞌ`, `ō`, `ā`), verificación de audio `WAV` nativo y pruebas de carga con **k6** (`25 VUs / 45s`).
-6. **`deploy-production`** *(entorno `production` con puerta de aprobación manual)*:
-   - Autenticación OIDC hacia AWS, despliegue atómico de `app-prod` en namespace `prod` con `./deploy/deploy_production.sh` (HPA 6–30 réplicas, Ingress TLS `letsencrypt-prod` en `api.app.org`).
+   - Valida criptográficamente la firma keyless OIDC de la imagen OCI con `cosign verify`.
+   - Ejecuta el contenedor real y lanza `./tests/release/run_release_tests.sh`: Smoke Tests con reintentos sobre `/healthz`, validación de contrato JSON y caracteres UTF-8 (`ꞌ`, `ō`, `ā`), verificación de audio `WAV` nativo y pruebas de carga con **k6** (`25 VUs / 45s`).
+6. **`deploy-production`** *(entorno `production`)*:
+   - Crea el clúster `kind` (`app-cluster`), carga la imagen, configura el namespace `prod` con `app-prod-secrets` y levanta una instancia real de **Prometheus** (`prom/prometheus:v3.2.1`).
+   - Ejecuta `./deploy/deploy_production.sh` (Helm `--atomic --wait`, 6 réplicas base con HPA 6–30 al 75% CPU, Ingress TLS `letsencrypt-prod` en `api.app.org`).
    - Espera **45 segundos** de estabilización y consulta la API de **Prometheus** sobre la tasa de errores HTTP 5xx en los últimos 2 minutos; si supera **`0.001` (0.1%)**, dispara automáticamente `helm rollback app-prod 0 --namespace prod --wait`.
 
 ---
@@ -78,45 +80,27 @@ El pipeline se dispara en `push` y `pull_request` sobre la rama `main`, utiliza 
 
 ---
 
-## Configuración en GitHub (Secretos, Variables y Entornos)
+## Entornos y Extensión a Clúster Gestionado (AWS EKS / SonarQube)
 
-Antes de ejecutar el pipeline completo en GitHub Actions, configura lo siguiente en **Settings > Environments** y **Settings > Secrets and variables > Actions**:
+El flujo incluido funciona de inmediato usando el `GITHUB_TOKEN` integrado de GitHub Actions y los entornos **`release`** y **`production`**.
 
-### 1. Entornos (`release` y `production`)
-- **`release`**:
-  - URL de despliegue: `https://release.app.org`
-  - Sin aprobadores manuales obligatorios (despliegue continuo tras pruebas unitarias y firma).
-- **`production`**:
-  - URL de despliegue: `https://api.app.org`
-  - Configurar **Required reviewers** (puerta de aprobación SRE/Product Owner antes de promover a producción).
-
-### 2. Secretos y Variables Requeridos
-
-| Nivel | Tipo | Nombre | Descripción |
-| :--- | :--- | :--- | :--- |
-| Repositorio | Variable | `AWS_REGION` | Región del clúster EKS `app-cluster` (por defecto `us-east-1`). |
-| Repositorio | Secreto | `SONAR_TOKEN` | Token de autenticación para SonarQube / SonarCloud. |
-| Repositorio | Secreto | `SONAR_HOST_URL` | URL base de la instancia de SonarQube. |
-| Entorno `release` | Secreto | `AWS_ROLE_ARN_RELEASE` | ARN del rol IAM con confianza OIDC para desplegar en el namespace `release`. |
-| Entorno `release` | Secreto | `RELEASE_DATABASE_URL` | Cadena de conexión PostgreSQL del entorno `release`. |
-| Entorno `release` | Secreto | `RELEASE_REDIS_URL` | *(Opcional)* URL de Redis (por defecto `redis://redis-master.release.svc.cluster.local:6379/0`). |
-| Entorno `release` | Secreto | `RELEASE_AUDIO_CDN_URL` | *(Opcional)* Base URL para muestras de audio en `release`. |
-| Entorno `production` | Secreto | `AWS_ROLE_ARN_PROD` | ARN del rol IAM con confianza OIDC para desplegar en el namespace `prod`. |
-| Entorno `production` | Secreto | `PROMETHEUS_URL` | URL de la API HTTP de Prometheus usada para validar la tasa de 5xx post-despliegue. |
+- Si deseas habilitar una **puerta de aprobación manual** antes de `deploy-production`, configura **Settings > Environments > `production` > Required reviewers** en GitHub.
+- Si posteriormente migras de `kind` a un clúster **AWS EKS** persistente o un servidor **SonarQube** dedicado, sustituye los pasos de `kind` por `aws-actions/configure-aws-credentials` + `aws eks update-kubeconfig --name app-cluster` y agrega `SonarSource/sonarqube-scan-action` (el archivo `sonar-project.properties` permanece listo para su uso).
 
 ---
 
 ## Comandos de Ejecución Local y Despliegue
 
-### Desarrollo, Linting y Pruebas Unitarias
+### Desarrollo, Linting, SAST y Pruebas Unitarias
 ```bash
 python -m venv .venv
 source .venv/bin/activate  # En Windows PowerShell: .\.venv\Scripts\Activate.ps1
 
 pip install -r requirements-dev.txt -r requirements-test.txt
 
-# Linter con Ruff
+# Linter con Ruff y SAST con Bandit
 ruff check .
+bandit -r src/ -ll
 
 # Pruebas unitarias y cobertura mínima del 85%
 pytest --cov=src --cov-fail-under=85 --cov-report=term-missing tests/unit/

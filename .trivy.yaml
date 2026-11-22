@@ -3,7 +3,6 @@ severity:
   - CRITICAL
 
 exit-code: 1
-ignore-unfixed: true
 
 scan:
   scanners:
@@ -15,10 +14,5 @@ scan:
     - .venv
     - .pytest_cache
     - __pycache__
-
-vulnerability:
-  type:
-    - os
-    - library
 
 timeout: 5m

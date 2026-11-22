@@ -6,10 +6,6 @@ terraform {
       source  = "hashicorp/kubernetes"
       version = "~> 2.33"
     }
-    helm = {
-      source  = "hashicorp/helm"
-      version = "~> 2.16"
-    }
   }
 }
 
@@ -25,20 +21,8 @@ variable "namespace" {
   default     = "release"
 }
 
-variable "redis_chart_version" {
-  description = "Versión del chart Helm de Bitnami Redis."
-  type        = string
-  default     = "20.1.7"
-}
-
 provider "kubernetes" {
   config_path = pathexpand(var.kubeconfig_path)
-}
-
-provider "helm" {
-  kubernetes {
-    config_path = pathexpand(var.kubeconfig_path)
-  }
 }
 
 resource "kubernetes_namespace_v1" "release" {
@@ -176,46 +160,155 @@ resource "kubernetes_network_policy_v1" "release_isolation" {
   }
 }
 
-resource "helm_release" "redis" {
-  name       = "redis"
-  repository = "https://charts.bitnami.com/bitnami"
-  chart      = "redis"
-  version    = var.redis_chart_version
-  namespace  = kubernetes_namespace_v1.release.metadata[0].name
+resource "kubernetes_deployment_v1" "redis" {
+  wait_for_rollout = true
 
-  atomic  = true
-  wait    = true
-  timeout = 300
+  metadata {
+    name      = "redis-master"
+    namespace = kubernetes_namespace_v1.release.metadata[0].name
 
-  values = [
-    yamlencode({
-      architecture = "standalone"
-      auth = {
-        # Aislado por NetworkPolicy intra-namespace para evitar credenciales estáticas en IaC
-        enabled = false
+    labels = {
+      "app.kubernetes.io/name"       = "redis"
+      "app.kubernetes.io/instance"   = "redis-master"
+      "app.kubernetes.io/part-of"    = "app"
+      "app.kubernetes.io/managed-by" = "terraform"
+      "environment"                  = "release"
+    }
+  }
+
+  spec {
+    replicas = 1
+
+    selector {
+      match_labels = {
+        "app.kubernetes.io/name"     = "redis"
+        "app.kubernetes.io/instance" = "redis-master"
       }
-      master = {
-        persistence = {
-          enabled = false
-        }
-        resources = {
-          requests = {
-            cpu    = "100m"
-            memory = "128Mi"
-          }
-          limits = {
-            cpu    = "250m"
-            memory = "256Mi"
-          }
+    }
+
+    template {
+      metadata {
+        labels = {
+          "app.kubernetes.io/name"     = "redis"
+          "app.kubernetes.io/instance" = "redis-master"
+          "environment"                = "release"
         }
       }
-    })
-  ]
+
+      spec {
+        automount_service_account_token = false
+
+        security_context {
+          run_as_non_root = true
+          run_as_user     = 999
+          run_as_group    = 999
+          fs_group        = 999
+
+          seccomp_profile {
+            type = "RuntimeDefault"
+          }
+        }
+
+        container {
+          name  = "redis"
+          image = "redis:7-alpine"
+          args  = ["--save", "", "--appendonly", "no"]
+
+          security_context {
+            allow_privilege_escalation = false
+            read_only_root_filesystem  = true
+            run_as_non_root            = true
+            run_as_user                = 999
+
+            capabilities {
+              drop = ["ALL"]
+            }
+          }
+
+          port {
+            name           = "redis"
+            container_port = 6379
+            protocol       = "TCP"
+          }
+
+          resources {
+            requests = {
+              cpu    = "50m"
+              memory = "64Mi"
+            }
+            limits = {
+              cpu    = "250m"
+              memory = "256Mi"
+            }
+          }
+
+          liveness_probe {
+            tcp_socket {
+              port = 6379
+            }
+            initial_delay_seconds = 10
+            period_seconds        = 10
+          }
+
+          readiness_probe {
+            tcp_socket {
+              port = 6379
+            }
+            initial_delay_seconds = 5
+            period_seconds        = 5
+          }
+
+          volume_mount {
+            name       = "redis-data"
+            mount_path = "/data"
+          }
+        }
+
+        volume {
+          name = "redis-data"
+          empty_dir {}
+        }
+      }
+    }
+  }
 
   depends_on = [
     kubernetes_namespace_v1.release,
     kubernetes_network_policy_v1.release_isolation,
   ]
+}
+
+resource "kubernetes_service_v1" "redis" {
+  metadata {
+    name      = "redis-master"
+    namespace = kubernetes_namespace_v1.release.metadata[0].name
+
+    labels = {
+      "app.kubernetes.io/name"       = "redis"
+      "app.kubernetes.io/instance"   = "redis-master"
+      "app.kubernetes.io/part-of"    = "app"
+      "app.kubernetes.io/managed-by" = "terraform"
+      "environment"                  = "release"
+    }
+  }
+
+  spec {
+    type = "ClusterIP"
+
+    selector = {
+      "app.kubernetes.io/name"     = "redis"
+      "app.kubernetes.io/instance" = "redis-master"
+    }
+
+    port {
+      name        = "redis"
+      port        = 6379
+      target_port = 6379
+      protocol    = "TCP"
+    }
+  }
+
+  depends_on = [kubernetes_deployment_v1.redis]
 }
 
 output "namespace" {

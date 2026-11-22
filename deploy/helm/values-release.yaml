@@ -3,7 +3,7 @@ environment: release
 
 image:
   repository: ghcr.io/org/app-cicd
-  tag: latest
+  tag: "1.0.0"
   pullPolicy: IfNotPresent
 
 secretName: app-release-secrets

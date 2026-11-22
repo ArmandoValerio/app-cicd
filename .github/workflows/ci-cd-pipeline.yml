@@ -20,7 +20,7 @@ concurrency:
 env:
   REGISTRY: ghcr.io
   PYTHON_VERSION: "3.12"
-  EKS_CLUSTER_NAME: app-cluster
+  K8S_CLUSTER_NAME: app-cluster
 
 jobs:
   static-analysis:
@@ -29,8 +29,6 @@ jobs:
     steps:
       - name: Checkout del repositorio
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Configurar Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@v5
@@ -38,20 +36,17 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
 
-      - name: Instalar dependencias de desarrollo
+      - name: Instalar dependencias de análisis estático
         run: pip install -r requirements-dev.txt
 
-      - name: Linter con Ruff
+      - name: Linter de código con Ruff
         run: ruff check .
 
-      - name: Análisis de calidad con SonarQube
-        uses: SonarSource/sonarqube-scan-action@v4
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+      - name: Análisis SAST en Python con Bandit
+        run: bandit -r src/ -ll
 
-      - name: Escaneo de vulnerabilidades con Trivy
-        uses: aquasecurity/trivy-action@0.28.0
+      - name: Escaneo de vulnerabilidades y misconfigs con Trivy
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
         with:
           scan-type: "fs"
           scan-ref: "."
@@ -130,7 +125,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Instalar Cosign
-        uses: sigstore/cosign-installer@v3
+        uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
 
       - name: Firmar imagen con Cosign (keyless OIDC)
         env:
@@ -139,21 +134,38 @@ jobs:
         run: cosign sign --yes "${IMAGE_REPO}@${IMAGE_DIGEST}"
 
   deploy-release:
-    name: Despliegue en Entorno de Liberación
+    name: Despliegue en Entorno de Liberación (kind + Terraform + Helm)
     runs-on: ubuntu-latest
     needs: [build-and-sign]
     environment:
       name: release
-      url: https://release.app.org
     steps:
       - name: Checkout del repositorio
         uses: actions/checkout@v4
 
-      - name: Autenticación OIDC con AWS
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Iniciar sesión en GHCR y descargar imagen firmada
+        uses: docker/login-action@v3
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN_RELEASE }}
-          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Descargar imagen OCI construida
+        env:
+          IMAGE_REPO: ${{ needs.build-and-sign.outputs.image_repo }}
+          IMAGE_TAG: ${{ needs.build-and-sign.outputs.image_tag }}
+        run: docker pull "${IMAGE_REPO}:${IMAGE_TAG}"
+
+      - name: Crear clúster Kubernetes efímero (${{ env.K8S_CLUSTER_NAME }}) con kind
+        uses: helm/kind-action@99576bfa6ddf9a8e612d83b513da5a75875caced # v1.9.0
+        with:
+          cluster_name: ${{ env.K8S_CLUSTER_NAME }}
+
+      - name: Cargar imagen en el clúster kind
+        env:
+          IMAGE_REPO: ${{ needs.build-and-sign.outputs.image_repo }}
+          IMAGE_TAG: ${{ needs.build-and-sign.outputs.image_tag }}
+        run: kind load docker-image "${IMAGE_REPO}:${IMAGE_TAG}" --name "${K8S_CLUSTER_NAME}"
 
       - name: Instalar Terraform
         uses: hashicorp/setup-terraform@v3
@@ -164,68 +176,132 @@ jobs:
       - name: Instalar Helm
         uses: azure/setup-helm@v4
 
-      - name: Instalar kubectl
-        uses: azure/setup-kubectl@v4
-
-      - name: Actualizar kubeconfig para EKS (${{ env.EKS_CLUSTER_NAME }})
-        env:
-          AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
-        run: aws eks update-kubeconfig --name "${EKS_CLUSTER_NAME}" --region "${AWS_REGION}"
-
       - name: Provisionar y desplegar entorno release
         env:
           IMAGE_REPOSITORY: ${{ needs.build-and-sign.outputs.image_repo }}
-          DATABASE_URL: ${{ secrets.RELEASE_DATABASE_URL }}
-          REDIS_URL: ${{ secrets.RELEASE_REDIS_URL || 'redis://redis-master.release.svc.cluster.local:6379/0' }}
-          AUDIO_CDN_URL: ${{ secrets.RELEASE_AUDIO_CDN_URL || 'https://release.app.org/api/v1/speech/sample' }}
+          DATABASE_URL: "postgresql://app@postgres.release.svc.cluster.local:5432/app"
+          REDIS_URL: "redis://redis-master.release.svc.cluster.local:6379/0"
+          AUDIO_CDN_URL: "https://release.app.org/api/v1/speech/sample"
         run: ./infra/release-env/provision_release.sh "${{ needs.build-and-sign.outputs.image_tag }}"
 
+      - name: Verificar recursos desplegados en namespace release
+        run: kubectl get pods,networkpolicy,svc,ingress -n release
+
   release-verification:
-    name: Verificación de Calidad y Carga en Liberación
+    name: Verificación Cosign, Contrato UTF-8 y Carga k6
     runs-on: ubuntu-latest
-    needs: [deploy-release]
+    needs: [build-and-sign, deploy-release]
     steps:
       - name: Checkout del repositorio
         uses: actions/checkout@v4
 
+      - name: Iniciar sesión en GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Instalar Cosign
+        uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+
+      - name: Verificar firma OIDC de la imagen OCI
+        env:
+          IMAGE_REPO: ${{ needs.build-and-sign.outputs.image_repo }}
+          IMAGE_DIGEST: ${{ needs.build-and-sign.outputs.image_digest }}
+        run: |
+          cosign verify \
+            --certificate-identity="https://github.com/${{ github.repository }}/.github/workflows/ci-cd-pipeline.yml@refs/heads/main" \
+            --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
+            "${IMAGE_REPO}@${IMAGE_DIGEST}"
+
+      - name: Iniciar servicio en contenedor local para pruebas E2E y carga
+        env:
+          IMAGE_REPO: ${{ needs.build-and-sign.outputs.image_repo }}
+          IMAGE_TAG: ${{ needs.build-and-sign.outputs.image_tag }}
+        run: docker run -d --name app-release -p 8000:8000 "${IMAGE_REPO}:${IMAGE_TAG}"
+
       - name: Instalar k6
-        uses: grafana/setup-k6-action@v1
+        uses: grafana/setup-k6-action@c47136d33d365efbeb9ae7266908b5dcf98cdece # v1.3.0
 
       - name: Ejecutar Smoke, Contrato UTF-8 y Pruebas de Carga
         env:
-          BASE_URL: https://release.app.org
+          BASE_URL: http://127.0.0.1:8000
         run: ./tests/release/run_release_tests.sh
 
+      - name: Detener contenedor de verificación
+        if: always()
+        run: docker rm -f app-release || true
+
   deploy-production:
-    name: Despliegue en Producción (con Puerta de Aprobación)
+    name: Despliegue en Producción y Validación SLO Prometheus
     runs-on: ubuntu-latest
     needs: [build-and-sign, release-verification]
     environment:
       name: production
-      url: https://api.app.org
     steps:
       - name: Checkout del repositorio
         uses: actions/checkout@v4
 
-      - name: Autenticación OIDC con AWS
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Iniciar sesión en GHCR y descargar imagen firmada
+        uses: docker/login-action@v3
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN_PROD }}
-          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Descargar imagen OCI construida
+        env:
+          IMAGE_REPO: ${{ needs.build-and-sign.outputs.image_repo }}
+          IMAGE_TAG: ${{ needs.build-and-sign.outputs.image_tag }}
+        run: docker pull "${IMAGE_REPO}:${IMAGE_TAG}"
+
+      - name: Crear clúster Kubernetes (${{ env.K8S_CLUSTER_NAME }}) con kind
+        uses: helm/kind-action@99576bfa6ddf9a8e612d83b513da5a75875caced # v1.9.0
+        with:
+          cluster_name: ${{ env.K8S_CLUSTER_NAME }}
+
+      - name: Cargar imagen en el clúster kind
+        env:
+          IMAGE_REPO: ${{ needs.build-and-sign.outputs.image_repo }}
+          IMAGE_TAG: ${{ needs.build-and-sign.outputs.image_tag }}
+        run: kind load docker-image "${IMAGE_REPO}:${IMAGE_TAG}" --name "${K8S_CLUSTER_NAME}"
 
       - name: Instalar Helm
         uses: azure/setup-helm@v4
 
-      - name: Instalar kubectl
-        uses: azure/setup-kubectl@v4
+      - name: Preparar namespace prod y secretos de aplicación
+        run: |
+          kubectl get namespace prod >/dev/null 2>&1 || kubectl create namespace prod
+          kubectl create secret generic app-prod-secrets \
+            --namespace prod \
+            --from-literal="DATABASE_URL=postgresql://app@postgres.prod.svc.cluster.local:5432/app" \
+            --from-literal="REDIS_URL=redis://redis-master.prod.svc.cluster.local:6379/0" \
+            --from-literal="AUDIO_CDN_URL=https://api.app.org/api/v1/speech/sample" \
+            --dry-run=client -o yaml | kubectl apply -f -
 
-      - name: Actualizar kubeconfig para EKS (${{ env.EKS_CLUSTER_NAME }})
-        env:
-          AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
-        run: aws eks update-kubeconfig --name "${EKS_CLUSTER_NAME}" --region "${AWS_REGION}"
+      - name: Iniciar servidor Prometheus para verificación post-despliegue
+        run: |
+          docker run -d --name app-prometheus -p 9090:9090 prom/prometheus:v3.2.1
+          for i in $(seq 1 15); do
+            if curl -fsS http://127.0.0.1:9090/-/ready >/dev/null 2>&1; then
+              echo "Prometheus listo."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Error: Prometheus no estuvo listo a tiempo." >&2
+          exit 1
 
       - name: Desplegar a producción con verificación SLO y rollback automático
         env:
           IMAGE_REPOSITORY: ${{ needs.build-and-sign.outputs.image_repo }}
-          PROMETHEUS_URL: ${{ secrets.PROMETHEUS_URL }}
+          PROMETHEUS_URL: http://127.0.0.1:9090
         run: ./deploy/deploy_production.sh "${{ needs.build-and-sign.outputs.image_tag }}"
+
+      - name: Verificar recursos desplegados en namespace prod
+        run: kubectl get pods,hpa,svc,ingress -n prod
+
+      - name: Detener contenedor Prometheus
+        if: always()
+        run: docker rm -f app-prometheus || true

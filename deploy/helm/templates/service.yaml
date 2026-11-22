@@ -1,3 +1,5 @@
+{{- $service := .Values.service | default dict -}}
+{{- $envName := .Values.environment | default "prod" -}}
 apiVersion: v1
 kind: Service
 metadata:
@@ -7,11 +9,11 @@ metadata:
     app.kubernetes.io/name: {{ .Chart.Name }}
     app.kubernetes.io/instance: {{ .Release.Name }}
     app.kubernetes.io/managed-by: {{ .Release.Service }}
-    environment: {{ .Values.environment | quote }}
+    environment: {{ $envName | quote }}
 spec:
-  type: {{ .Values.service.type }}
+  type: {{ $service.type | default "ClusterIP" }}
   ports:
-    - port: {{ .Values.service.port }}
+    - port: {{ $service.port | default 80 }}
       targetPort: http
       protocol: TCP
       name: http

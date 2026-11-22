@@ -1,4 +1,7 @@
-{{- if .Values.ingress.enabled }}
+{{- $ingress := .Values.ingress | default dict -}}
+{{- $service := .Values.service | default dict -}}
+{{- $envName := .Values.environment | default "prod" -}}
+{{- if ($ingress.enabled | default false) }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -8,30 +11,30 @@ metadata:
     app.kubernetes.io/name: {{ .Chart.Name }}
     app.kubernetes.io/instance: {{ .Release.Name }}
     app.kubernetes.io/managed-by: {{ .Release.Service }}
-    environment: {{ .Values.environment | quote }}
-  {{- with .Values.ingress.annotations }}
+    environment: {{ $envName | quote }}
+  {{- with $ingress.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
-  {{- if .Values.ingress.className }}
-  ingressClassName: {{ .Values.ingress.className }}
+  {{- if $ingress.className }}
+  ingressClassName: {{ $ingress.className }}
   {{- end }}
-  {{- if .Values.ingress.tls.enabled }}
+  {{- if and $ingress.tls $ingress.tls.enabled }}
   tls:
     - hosts:
-        - {{ .Values.ingress.host }}
-      secretName: {{ .Values.ingress.tls.secretName }}
+        - {{ $ingress.host }}
+      secretName: {{ $ingress.tls.secretName }}
   {{- end }}
   rules:
-    - host: {{ .Values.ingress.host }}
+    - host: {{ $ingress.host }}
       http:
         paths:
-          - path: {{ .Values.ingress.path }}
-            pathType: {{ .Values.ingress.pathType }}
+          - path: {{ $ingress.path | default "/" }}
+            pathType: {{ $ingress.pathType | default "Prefix" }}
             backend:
               service:
                 name: {{ .Release.Name }}
                 port:
-                  number: {{ .Values.service.port }}
+                  number: {{ $service.port | default 80 }}
 {{- end }}
